@@ -25,7 +25,12 @@
 
 #define UidFreeAdress 200 //Адрес ячейки для хранения свободного адреса для записи 
 
+
 Thread showUIDonTime = Thread();
+
+
+int MaxRFIDTags = 50;	//Максимальное количество RFID меток
+int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
 
 unsigned long CardUIDeEPROMread[] = { //Массив для меток
 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29, 
@@ -66,6 +71,19 @@ unsigned long EEPROMReadUID(byte address) //Чтение карты из EEPROM
 	return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
 
+bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки в массиве EEPROM
+{
+	for (int i = 0; i < maxAvailableAdress; i+=5)
+	{
+		if (uidDec == EEPROMReadUID(i))
+		{
+			Serial.println("Метка есть в базе");
+			return true;
+		}
+	}
+	return false;
+}
+
 void ShowUID() //Выводим ID метки в десятичном формате
 {  	
 	uidDec = 0;		
@@ -95,11 +113,9 @@ void setup()
 
 	EEPROMstartAddr = EEPROM.read(UidFreeAdress); //Чтение свободного адреса для записи ячеек
 	Serial.println(EEPROMstartAddr);
-	
 
 	showUIDonTime.onRun(ShowUID);
 	showUIDonTime.setInterval(5000);
-
 }
 
 void loop() 
@@ -111,22 +127,18 @@ void loop()
 
 	if ( mfrc522.PICC_ReadCardSerial()) 
 	{
-		if (IsAdmin(uidDec))
-		{
-			if (showUIDonTime.shouldRun())
+		if (showUIDonTime.shouldRun())
+		{	
+			showUIDonTime.run();
+			if (FindingTagsInEEPROM(uidDec))
 			{
-				showUIDonTime.run();
-				Serial.println("Это карта админа");
+				
+			}
+			else 
+			{
+				Serial.println("НЕТУ");
 			}
 			
-		}
-		else	
-		{
-			if (showUIDonTime.shouldRun())
-			{
-				showUIDonTime.run();
-				Serial.println("другая карта");
-			}
 		}
 		
 	}
