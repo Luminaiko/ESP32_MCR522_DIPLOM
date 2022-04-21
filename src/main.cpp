@@ -25,12 +25,13 @@
 
 #define UidFreeAdress 200 //Адрес ячейки для хранения свободного адреса для записи 
 
-
 Thread showUIDonTime = Thread();
-
 
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
+
+byte deleteAdress;
+
 
 unsigned long CardUIDeEPROMread[] = { //Массив для меток
 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29, 
@@ -42,24 +43,6 @@ unsigned long uidAdmin = 3544981781; // Номер метки админа
 byte EEPROMstartAddr = 0;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Создание обьекта RFID
-
-void EEPROMWriteUID(int address, unsigned long value) //запись карты в EEPROM
-{
-	byte four = (value & 0xFF);
-	byte three = ((value >> 8) & 0xFF);
-	byte two = ((value >> 16) & 0xFF);
-	byte one = ((value >> 24) & 0xFF);
-	
-	EEPROM.write(address, four);
-	EEPROM.write(address + 1, three);
-	EEPROM.write(address + 2, two);
-	EEPROM.write(address + 3, one);
-
-	EEPROM.write(UidFreeAdress, address + 5);
-	EEPROM.commit();
-
-	
-}
 
 unsigned long EEPROMReadUID(byte address) //Чтение карты из EEPROM
 {
@@ -77,11 +60,61 @@ bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки
 	{
 		if (uidDec == EEPROMReadUID(i))
 		{
+			deleteAdress = i;
 			Serial.println("Метка есть в базе");
 			return true;
 		}
 	}
 	return false;
+}
+
+void EEPROMWriteUID(int address, unsigned long value) //запись карты в EEPROM
+{
+	if (FindingTagsInEEPROM(value))
+	{
+		Serial.println("МЕТКА УЖЕ ЕСТЬ ПОШЕЛ НАХУЙ");
+	}
+	else 
+	{
+		byte four = (value & 0xFF);
+		byte three = ((value >> 8) & 0xFF);
+		byte two = ((value >> 16) & 0xFF);
+		byte one = ((value >> 24) & 0xFF);
+		
+		EEPROM.write(address, four);
+		EEPROM.write(address + 1, three);
+		EEPROM.write(address + 2, two);
+		EEPROM.write(address + 3, one);
+
+		EEPROM.write(UidFreeAdress, address + 4);
+		EEPROM.commit();
+	}
+}
+
+void DeleteFromEEPROM(unsigned long value) 
+{
+	if (FindingTagsInEEPROM(value))
+	{
+		EEPROM.write(deleteAdress, 0);
+		EEPROM.write(deleteAdress + 1, 0);
+		EEPROM.write(deleteAdress + 2, 0);
+		EEPROM.write(deleteAdress + 3, 0);
+
+		EEPROM.write(UidFreeAdress, EEPROM.read(UidFreeAdress) - 4);
+		EEPROM.commit();
+
+		Serial.println("Удаление прошло успешно");
+	}
+	else
+	{
+		Serial.println("Метки нет, удалять нечего");
+	}
+	
+}
+
+void RewriteEEPROMAfterDelete()
+{
+
 }
 
 void ShowUID() //Выводим ID метки в десятичном формате
@@ -111,9 +144,11 @@ void setup()
 
 	EEPROM.begin(1000);
 
-	EEPROMstartAddr = EEPROM.read(UidFreeAdress); //Чтение свободного адреса для записи ячеек
-	Serial.println(EEPROMstartAddr);
-
+	for (int i = 0; i < 5; i++)
+	{
+		Serial.println(EEPROM.read(i));
+	}
+	
 	showUIDonTime.onRun(ShowUID);
 	showUIDonTime.setInterval(5000);
 }
