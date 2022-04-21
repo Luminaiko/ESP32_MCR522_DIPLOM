@@ -25,17 +25,15 @@
 
 #define UidFreeAdress 200 //Адрес ячейки для хранения свободного адреса для записи 
 
+uint32_t TimerOnShowTags, myTimer2, myTimer3;
+
+
 Thread showUIDonTime = Thread();
 
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
 
-byte deleteAdress;
-
-
-unsigned long CardUIDeEPROMread[] = { //Массив для меток
-0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29, 
-30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49};
+byte deleteAdress; //Начальный адрес для удаления метки если такая есть
 
 unsigned long uidDec, uidDecTemp; // для хранения номера метки в десятичном формате
 unsigned long uidAdmin = 3544981781; // Номер метки админа
@@ -58,6 +56,8 @@ bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки
 {
 	for (int i = 0; i < maxAvailableAdress; i+=5)
 	{
+		Serial.print("Итерация цикла проверки = ");
+		Serial.println(i);
 		if (uidDec == EEPROMReadUID(i))
 		{
 			deleteAdress = i;
@@ -65,36 +65,29 @@ bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки
 			return true;
 		}
 	}
+	Serial.println("Метки нет в базе");
 	return false;
 }
 
-void EEPROMWriteUID(int address, unsigned long value) //запись карты в EEPROM
+void EEPROMWriteUID(unsigned long value) //запись карты в EEPROM
 {
-	if (FindingTagsInEEPROM(value))
-	{
-		Serial.println("МЕТКА УЖЕ ЕСТЬ ПОШЕЛ НАХУЙ");
-	}
-	else 
-	{
 		byte four = (value & 0xFF);
 		byte three = ((value >> 8) & 0xFF);
 		byte two = ((value >> 16) & 0xFF);
 		byte one = ((value >> 24) & 0xFF);
 		
-		EEPROM.write(address, four);
-		EEPROM.write(address + 1, three);
-		EEPROM.write(address + 2, two);
-		EEPROM.write(address + 3, one);
+		EEPROM.write(EEPROM.read(UidFreeAdress), four);
+		EEPROM.write(EEPROM.read(UidFreeAdress) + 1, three);
+		EEPROM.write(EEPROM.read(UidFreeAdress) + 2, two);
+		EEPROM.write(EEPROM.read(UidFreeAdress) + 3, one);
 
-		EEPROM.write(UidFreeAdress, address + 4);
+		EEPROM.write(UidFreeAdress, EEPROM.read(UidFreeAdress) + 4);
 		EEPROM.commit();
-	}
+		Serial.println("Метка успешно записана");
 }
 
-void DeleteFromEEPROM(unsigned long value) 
-{
-	if (FindingTagsInEEPROM(value))
-	{
+void DeleteFromEEPROM(unsigned long value) //Удаление метки из EEPROM
+{	
 		EEPROM.write(deleteAdress, 0);
 		EEPROM.write(deleteAdress + 1, 0);
 		EEPROM.write(deleteAdress + 2, 0);
@@ -104,11 +97,7 @@ void DeleteFromEEPROM(unsigned long value)
 		EEPROM.commit();
 
 		Serial.println("Удаление прошло успешно");
-	}
-	else
-	{
-		Serial.println("Метки нет, удалять нечего");
-	}
+	
 	
 }
 
@@ -125,9 +114,10 @@ void ShowUID() //Выводим ID метки в десятичном форма
 		uidDecTemp = mfrc522.uid.uidByte[i]; // Выдача серийного номера метки.
 		uidDec = uidDec * 256 + uidDecTemp;
 	}
-	Serial.println("Card UID: ");
+	Serial.print("Card UID: ");
 	Serial.println(uidDec); // Выводим UID метки в консоль.
 }
+
 
 bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
 {
@@ -144,13 +134,19 @@ void setup()
 
 	EEPROM.begin(1000);
 
-	for (int i = 0; i < 5; i++)
+	Serial.println(EEPROM.read(UidFreeAdress));
+	
+	for (int  i = 0; i < 50; i++)
 	{
+		//EEPROM.write(i,0);
 		Serial.println(EEPROM.read(i));
 	}
-	
+	//EEPROM.write(UidFreeAdress, 0);
+	//EEPROM.commit();
+
 	showUIDonTime.onRun(ShowUID);
 	showUIDonTime.setInterval(5000);
+
 }
 
 void loop() 
@@ -162,19 +158,22 @@ void loop()
 
 	if ( mfrc522.PICC_ReadCardSerial()) 
 	{
-		if (showUIDonTime.shouldRun())
-		{	
-			showUIDonTime.run();
+		if (millis() - TimerOnShowTags >= 2000)
+		{
+			TimerOnShowTags = millis();
+			ShowUID();
+
 			if (FindingTagsInEEPROM(uidDec))
 			{
-				
+				DeleteFromEEPROM(uidDec);
 			}
-			else 
+			else
 			{
-				Serial.println("НЕТУ");
+				EEPROMWriteUID(uidDec);
 			}
 			
 		}
+
 		
 	}
 }
