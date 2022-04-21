@@ -54,7 +54,7 @@ unsigned long EEPROMReadUID(byte address) //Чтение карты из EEPROM
 
 bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки в массиве EEPROM
 {
-	for (int i = 0; i < maxAvailableAdress; i+=5)
+	for (int i = 0; i < maxAvailableAdress; i+=4)
 	{
 		Serial.print("Итерация цикла проверки = ");
 		Serial.println(i);
