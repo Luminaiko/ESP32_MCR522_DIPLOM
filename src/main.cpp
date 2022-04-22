@@ -27,13 +27,10 @@
 
 uint32_t TimerOnShowTags, myTimer2, myTimer3;
 
-
-Thread showUIDonTime = Thread();
-
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
 
-byte deleteAdress; //Начальный адрес для удаления метки если такая есть
+int deleteAdress; //Начальный адрес для удаления метки если такая есть
 
 unsigned long uidDec, uidDecTemp; // для хранения номера метки в десятичном формате
 unsigned long uidAdmin = 3544981781; // Номер метки админа
@@ -101,9 +98,16 @@ void DeleteFromEEPROM(unsigned long value) //Удаление метки из EE
 	
 }
 
-void RewriteEEPROMAfterDelete()
+void RewriteEEPROMAfterDelete() //Перезапись ячеек на случай удаления
 {
-
+	for (int i = deleteAdress; i < maxAvailableAdress; i++)
+	{
+		byte data = EEPROM.read(i+4);
+		Serial.println(i);
+		EEPROM.write(i, data);
+	}
+	EEPROM.commit();
+	
 }
 
 void ShowUID() //Выводим ID метки в десятичном формате
@@ -136,16 +140,13 @@ void setup()
 
 	Serial.println(EEPROM.read(UidFreeAdress));
 	
-	for (int  i = 0; i < 50; i++)
+	for (int  i = 0; i < 12; i++)
 	{
 		//EEPROM.write(i,0);
 		Serial.println(EEPROM.read(i));
 	}
 	//EEPROM.write(UidFreeAdress, 0);
 	//EEPROM.commit();
-
-	showUIDonTime.onRun(ShowUID);
-	showUIDonTime.setInterval(5000);
 
 }
 
@@ -163,13 +164,14 @@ void loop()
 			TimerOnShowTags = millis();
 			ShowUID();
 
-			if (FindingTagsInEEPROM(uidDec))
+			if (FindingTagsInEEPROM(uidDec)) //Если метка есть в базе
 			{
-				DeleteFromEEPROM(uidDec);
+				DeleteFromEEPROM(uidDec); //Удаляем
+				RewriteEEPROMAfterDelete();
 			}
-			else
+			else //Если нет
 			{
-				EEPROMWriteUID(uidDec);
+				EEPROMWriteUID(uidDec); //Добавляем
 			}
 			
 		}
