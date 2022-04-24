@@ -23,9 +23,14 @@
 #define RST_PIN 22
 #define SS_PIN 21
 
-#define UidFreeAdress 200 //Адрес ячейки для хранения свободного адреса для записи 
+#define RfidFreeAddress 200 //Адрес ячейки для хранения свободного адреса для записи 
+#define SsidAdress 495
+#define PasswordAddress 480
 
-uint32_t TimerOnShowTags, myTimer2, myTimer3;
+const char* ssid;
+const char* password;
+
+uint32_t TimerOnShowTags;
 
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
@@ -39,7 +44,7 @@ byte EEPROMstartAddr = 0;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Создание обьекта RFID
 
-unsigned long EEPROMReadUID(byte address) //Чтение карты из EEPROM
+unsigned long ReadRfidEEPROM(byte address) //Чтение карты из EEPROM
 {
 	long four = EEPROM.read(address);
 	long three = EEPROM.read(address + 1);
@@ -49,13 +54,13 @@ unsigned long EEPROMReadUID(byte address) //Чтение карты из EEPROM
 	return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
 
-bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки в массиве EEPROM
+bool FindRfidEEPROM(unsigned long uidDec) //Нахождение метки в массиве EEPROM
 {
 	for (int i = 0; i < maxAvailableAdress; i+=4)
 	{
 		Serial.print("Итерация цикла проверки = ");
 		Serial.println(i);
-		if (uidDec == EEPROMReadUID(i))
+		if (uidDec == ReadRfidEEPROM(i))
 		{
 			deleteAdress = i;
 			Serial.println("Метка есть в базе");
@@ -66,19 +71,19 @@ bool FindingTagsInEEPROM(unsigned long uidDec) //Нахождение метки
 	return false;
 }
 
-void EEPROMWriteUID(unsigned long value) //запись карты в EEPROM
+void WriteRfidEEPROM(unsigned long value) //запись карты в EEPROM
 {
 		byte four = (value & 0xFF);
 		byte three = ((value >> 8) & 0xFF);
 		byte two = ((value >> 16) & 0xFF);
 		byte one = ((value >> 24) & 0xFF);
 		
-		EEPROM.write(EEPROM.read(UidFreeAdress), four);
-		EEPROM.write(EEPROM.read(UidFreeAdress) + 1, three);
-		EEPROM.write(EEPROM.read(UidFreeAdress) + 2, two);
-		EEPROM.write(EEPROM.read(UidFreeAdress) + 3, one);
+		EEPROM.write(EEPROM.read(RfidFreeAddress), four);
+		EEPROM.write(EEPROM.read(RfidFreeAddress) + 1, three);
+		EEPROM.write(EEPROM.read(RfidFreeAddress) + 2, two);
+		EEPROM.write(EEPROM.read(RfidFreeAddress) + 3, one);
 
-		EEPROM.write(UidFreeAdress, EEPROM.read(UidFreeAdress) + 4);
+		EEPROM.write(RfidFreeAddress, EEPROM.read(RfidFreeAddress) + 4);
 		EEPROM.commit();
 		Serial.println("Метка успешно записана");
 }
@@ -90,7 +95,7 @@ void DeleteFromEEPROM(unsigned long value) //Удаление метки из EE
 		EEPROM.write(deleteAdress + 2, 0);
 		EEPROM.write(deleteAdress + 3, 0);
 
-		EEPROM.write(UidFreeAdress, EEPROM.read(UidFreeAdress) - 4);
+		EEPROM.write(RfidFreeAddress, EEPROM.read(RfidFreeAddress) - 4);
 		EEPROM.commit();
 
 		Serial.println("Удаление прошло успешно");
@@ -100,14 +105,11 @@ void DeleteFromEEPROM(unsigned long value) //Удаление метки из EE
 
 void RewriteEEPROMAfterDelete() //Перезапись ячеек на случай удаления
 {
-	for (int i = deleteAdress; i < maxAvailableAdress; i++)
+	for (int i = deleteAdress; i < maxAvailableAdress-4; i++)
 	{
-		byte data = EEPROM.read(i+4);
-		Serial.println(i);
-		EEPROM.write(i, data);
+		EEPROM.write(i, EEPROM.read(i+4));
 	}
 	EEPROM.commit();
-	
 }
 
 void ShowUID() //Выводим ID метки в десятичном формате
@@ -122,11 +124,40 @@ void ShowUID() //Выводим ID метки в десятичном форма
 	Serial.println(uidDec); // Выводим UID метки в консоль.
 }
 
-
 bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
 {
 	if(card == uidAdmin) return true;
 	else return false;
+}
+
+void WriteStringEEPROM(int address, String str) //Записать строку в ЕЕПРОМ
+{
+	byte len = str.length();
+	EEPROM.write(address, len);
+	for (int i = 0; i < len; i++)
+	{
+		EEPROM.write(address + 1 + i, str[i]);
+	}
+	EEPROM.commit();
+}
+
+String ReadStringEEPROM(int address) //Прочитать строку из еепром
+{
+	int len = EEPROM.read(address);
+	char data[len];
+	
+	for (int i = 0; i < len; i++)
+	{
+		data[i] = EEPROM.read(address + 1 + i);
+	}
+	data[len] = '\0'; 
+	return String(data);
+  
+}
+
+char ReadSsidEEPROM() 
+{
+
 }
 
 void setup() 
@@ -138,16 +169,36 @@ void setup()
 
 	EEPROM.begin(1000);
 
-	Serial.println(EEPROM.read(UidFreeAdress));
+	char ssidBuf[EEPROM.read(SsidAdress)];
+ 	ReadStringEEPROM(SsidAdress).toCharArray(ssidBuf, EEPROM.read(SsidAdress)+1);
+	char passwordBuf[EEPROM.read(PasswordAddress)];
+	ReadStringEEPROM(PasswordAddress).toCharArray(passwordBuf, EEPROM.read(SsidAdress)+1);
+
+	ssid = ssidBuf;
+	password = passwordBuf;
+
+	WiFi.begin(ssid, password);
+
+	while (WiFi.status() != WL_CONNECTED) 
+    {
+		delay(500);
+		Serial.println("...");
+	}
+ 
+  	Serial.print("WiFi connected with IP: ");
+	
+
+/*
+	Serial.println(EEPROM.read(RfidFreeAddress));
 	
 	for (int  i = 0; i < 12; i++)
 	{
 		//EEPROM.write(i,0);
 		Serial.println(EEPROM.read(i));
 	}
-	//EEPROM.write(UidFreeAdress, 0);
+	//EEPROM.write(RfidFreeAddress, 0);
 	//EEPROM.commit();
-
+*/
 }
 
 void loop() 
@@ -164,18 +215,19 @@ void loop()
 			TimerOnShowTags = millis();
 			ShowUID();
 
-			if (FindingTagsInEEPROM(uidDec)) //Если метка есть в базе
+			if (FindRfidEEPROM(uidDec)) //Если метка есть в базе
 			{
 				DeleteFromEEPROM(uidDec); //Удаляем
 				RewriteEEPROMAfterDelete();
 			}
 			else //Если нет
 			{
-				EEPROMWriteUID(uidDec); //Добавляем
+				WriteRfidEEPROM(uidDec); //Добавляем
 			}
 			
 		}
-
-		
 	}
+
+
+
 }
