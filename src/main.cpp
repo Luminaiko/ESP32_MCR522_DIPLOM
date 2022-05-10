@@ -31,19 +31,8 @@
 #define PasswordAddress 480 //адрес для хранения пароля от роутера
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-class Message {
-	private:
-
-	public:
-		static void sendMessage(String Message)
-		{
-			
-		}
-
-
-
-};
-
+int Lenght = 20;
+int amount;
 
 const char* ssid;
 const char* password;
@@ -195,7 +184,7 @@ void getUid() //Выводим ID метки в десятичном форма�
 
 void showUid() 
 {
-	Serial.println("#00" + (String)uidDec + ";");
+	
 }
 
 bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
@@ -232,27 +221,138 @@ String ReadStringEEPROM(int address) //Прочитать строку из ее
 	return String(data);
   
 }
+String expression;
+
+static void PrintSSIDPasswordInfo()
+{
+	Serial.println("#03" + String(ReadStringEEPROM(SsidAdress) + ";"));
+	delay(100);
+	Serial.println("#04" + String(ReadStringEEPROM(PasswordAddress) + ";"));
+}
+
+String FindingEnding(char data[]) 
+{
+	for(int i = 3; i < amount; i++)
+	{
+		if(data[i] != ';')
+		{
+			expression += (char)data[i];
+		}
+		else
+		{
+			break;
+		}
+	}
+	return expression;
+}
+void ChangeSSID(String expression)
+{
+	WriteStringEEPROM(SsidAdress, expression);
+	EEPROM.commit();
+}
+
+void ChangePassword(String expression)
+{
+	WriteStringEEPROM(PasswordAddress, expression);
+	EEPROM.commit();
+}
+void ChooseCommand(char data[]) //3 шаг: Проверяем какую именно команду нам отправили
+{
+	if(data[2] == '0')
+	{
+		Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
+		ChangeSSID(FindingEnding(data));
+		expression = "";
+	}
+	else if(data[2] == '1')
+	{
+		Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
+		ChangePassword(FindingEnding(data));
+		expression = "";
+	}
+	else if(data[2] == '2')
+	{
+		PrintSSIDPasswordInfo();
+	}
+}
+
+void CheckForDistanation(char data[]) //2 шаг: Проверяем кому отправили данные
+{
+	if(data[1] == '1')
+	{
+		Serial.println("Это для ЕСП");
+		ChooseCommand(data);
+	}
+	else
+	{
+		Serial.println("Это для компьютера");
+		return;
+	}
+}
+
+bool CheckForEnding(char data[])
+{
+	for(int i = 0; i < Lenght; i++)
+	{
+		if(data[i] == ';')
+		{
+		return true;
+		}
+	}
+	return false;
+}
+
+void sendMessage(String Message)
+{
+	
+}
+
+void CheckForCommand(char data[]) //1 шаг: проверяем является ли командой 
+{
+	if(data[0] == '#' && CheckForEnding(data))
+	{
+		CheckForDistanation(data);
+	}
+	else
+	{
+		return;
+	}
+}
+
+static void SendDeletedRFID(unsigned long uidDec)
+{
+	Serial.println("#02" + (String)uidDec + ";");
+}
+
+static void SendAddedRFID(unsigned long uidDec)
+{
+	Serial.println("#01" + (String)uidDec + ";");
+}
+
+static void SendNewEvent(unsigned long uidDec)
+{
+	Serial.println("#05" + (String)uidDec + ";");
+}
 
 void WriteDeleteMode(unsigned long uidDec) //Для записи/удаления в мастер моде
 {
 	if (FindRfidEEPROM(uidDec)) //Если метка есть в базе
 	{
 		DeleteFromEEPROM(uidDec); //Удаляем
-		showUid();
+		SendDeletedRFID(uidDec);
 		zoomerDelete();
 		RewriteEEPROMAfterDelete();
 	}
 	else //Если нет
 	{
 		WriteRfidEEPROM(uidDec); //Добавляем
-		showUid();
+		SendAddedRFID(uidDec);
 		zoomerWrite();
 	}
 }
 
 void Master() //Метод для записи/удаления меток 
 {
-
 	while (timeMasterStart + masterTime > millis())
 	{
 		if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial())
@@ -284,6 +384,7 @@ void CloseOpen(unsigned long uidDec)
 {
 	if (FindRfidEEPROM(uidDec)) 
 	{
+		SendNewEvent(uidDec);
 		succes();
 	}
 	else 
@@ -295,103 +396,11 @@ void CloseOpen(unsigned long uidDec)
 //////////////////////////////////////////////////ВЫПОЛНЕНИЕ КОМАНД////////////////////////////////////////////////////////////////
 
 
-int Lenght = 20;
-int amount;
-
-void ChangeSSID(String expression)
-{
-    WriteStringEEPROM(SsidAdress, expression);
-    EEPROM.commit();
-}
-void ChangePassword(String expression)
-{
-    WriteStringEEPROM(PasswordAddress, expression);
-    EEPROM.commit();
-}
-
-void ChooseCommand(char data[]) //3 шаг: Проверяем какую именно команду нам отправили
-{
-  if(data[2] == '0')
-  {
-    String expression = "";
-    for(int i = 3; i < amount; i++)
-    {
-		if(data[i] != ';')
-		{
-			expression += (char)data[i];
-		}
-		else
-		{
-			break;
-		}
-    }
-    Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
-    Serial.println(expression);
-	ChangeSSID(expression);
-    expression = "";
-  }
-  else if(data[2] == '1')
-  {
-	String expression = "";
-    for(int i = 3; i < amount; i++)
-    {
-		if(data[i] != ';')
-		{
-			expression += (char)data[i];
-		}
-		else
-		{
-			break;
-		}
-    }
-	ChangePassword(expression);
-	Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
-    Serial.println(expression);
-	expression = "";
-  }
-  
-}
-
-void CheckForDistanation(char data[]) //2 шаг: Проверяем кому отправили данные
-{
-  if(data[1] == '1')
-  {
-    Serial.println("Это для ЕСП");
-    ChooseCommand(data);
-  }
-  else
-  {
-    Serial.println("Это для компьютера");
-    return;
-  }
-}
-
-bool CheckForEnding(char data[])
-{
-  for(int i = 0; i < Lenght; i++)
-  {
-    if(data[i] == ';')
-    {
-      return true;
-    }
-  }
-  return false;
-}
-
-void CheckForCommand(char data[]) //1 шаг: проверяем является ли командой 
-{
-  if(data[0] == '#' && CheckForEnding(data))
-  {
-    CheckForDistanation(data);
-  }
-  else
-  {
-    return;
-  }
-}
 
 void setup() 
 {
+	expression = "";
+
 	pinMode(Zoomer, OUTPUT);
 	Serial.begin(115200);   // Инициализация сериал порта
   	while (!Serial);      // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
@@ -457,6 +466,8 @@ void setup()
 	//EEPROM.commit();
 */
 }
+
+
 
 void loop() 
 {	
