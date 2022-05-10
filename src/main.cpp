@@ -15,34 +15,101 @@
 
 #include <SPI.h>
 #include <Arduino.h>
-#include <MFRC522.h>  	//для работы с rfid метками
-#include <EEPROM.h>	//для работы с EEPROM
-#include <WiFi.h>		//Для подключения к wifi
+#include <MFRC522.h>  	
+#include <EEPROM.h>	
+#include <WiFi.h>		
 #include <Thread.h>
 
 #define RST_PIN 22
 #define SS_PIN 21
+#define Zoomer 32
+
+//////////////////////////////////////////// АДРЕСА В ЕЕПРОМ ПАМЯТИ /////////////////////////////////////////
 
 #define RfidFreeAddress 200 //Адрес ячейки для хранения свободного адреса для записи 
-#define SsidAdress 495
-#define PasswordAddress 480
+#define SsidAdress 495 //Адрес ячеййки для хранения SSID роутера
+#define PasswordAddress 480 //адрес для хранения пароля от роутера
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+int Lenght = 20;
+int amount;
 
 const char* ssid;
 const char* password;
 
 uint32_t TimerOnShowTags;
-
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
-
 int deleteAdress; //Начальный адрес для удаления метки если такая есть
-
 unsigned long uidDec, uidDecTemp; // для хранения номера метки в десятичном формате
 unsigned long uidAdmin = 3544981781; // Номер метки админа
 
-byte EEPROMstartAddr = 0;
+long timeStart;                 //  время, в которое сработала карта
+long timeMasterStart;           //  время, в которое запустился цикл добавления новой метки
+const int openTime = 200;     //  время, мс, на которое открывается замок
+const int masterTime = 7000;  //  время, на которое активируется режим добавления новой метки
+
+bool ReadWriteMode = false; //Флаг для режима записи
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Создание обьекта RFID
+
+void succes() //  функция открытия замка 
+{                      
+	digitalWrite(Zoomer, HIGH);
+	delay(1000);
+	digitalWrite(Zoomer, LOW);
+}
+
+void reject() //  функция отказа в открытии замка
+{                  
+	for (uint8_t n=0; n<=2; n++)
+	{    
+		digitalWrite(Zoomer, HIGH);
+		delay(100);      
+		digitalWrite(Zoomer, LOW);
+		delay(100);
+	}
+}
+
+void enterMasterMode() //  функция открытия замка 
+{                      
+	for (uint8_t n=0; n<=3; n++)
+	{    
+		digitalWrite(Zoomer, HIGH);
+		delay(300);      
+		digitalWrite(Zoomer, LOW);
+		delay(300);
+	}
+}
+
+void exitMasterMode() 
+{
+	for (uint8_t n=0; n<3; n++)
+	{    
+		digitalWrite(Zoomer, HIGH);
+		delay(300);      
+		digitalWrite(Zoomer, LOW);
+		delay(300);
+	}
+}
+
+void zoomerWrite() 
+{
+	digitalWrite(Zoomer, HIGH);
+	delay(500);
+	digitalWrite(Zoomer, LOW);
+}
+
+void zoomerDelete() 
+{
+	for (size_t i = 0; i < 2; i++)
+	{
+		digitalWrite(Zoomer, HIGH);
+		delay(500);
+		digitalWrite(Zoomer, LOW);
+		delay(500);
+	}
+}
 
 unsigned long ReadRfidEEPROM(byte address) //Чтение карты из EEPROM
 {
@@ -58,16 +125,12 @@ bool FindRfidEEPROM(unsigned long uidDec) //Нахождение метки в �
 {
 	for (int i = 0; i < maxAvailableAdress; i+=4)
 	{
-		Serial.print("Итерация цикла проверки = ");
-		Serial.println(i);
 		if (uidDec == ReadRfidEEPROM(i))
 		{
 			deleteAdress = i;
-			Serial.println("Метка есть в базе");
 			return true;
 		}
 	}
-	Serial.println("Метки нет в базе");
 	return false;
 }
 
@@ -85,7 +148,6 @@ void WriteRfidEEPROM(unsigned long value) //запись карты в EEPROM
 
 		EEPROM.write(RfidFreeAddress, EEPROM.read(RfidFreeAddress) + 4);
 		EEPROM.commit();
-		Serial.println("Метка успешно записана");
 }
 
 void DeleteFromEEPROM(unsigned long value) //Удаление метки из EEPROM
@@ -97,10 +159,6 @@ void DeleteFromEEPROM(unsigned long value) //Удаление метки из EE
 
 		EEPROM.write(RfidFreeAddress, EEPROM.read(RfidFreeAddress) - 4);
 		EEPROM.commit();
-
-		Serial.println("Удаление прошло успешно");
-	
-	
 }
 
 void RewriteEEPROMAfterDelete() //Перезапись ячеек на случай удаления
@@ -112,7 +170,7 @@ void RewriteEEPROMAfterDelete() //Перезапись ячеек на случ�
 	EEPROM.commit();
 }
 
-void ShowUID() //Выводим ID метки в десятичном формате
+void getUid() //Выводим ID метки в десятичном формате
 {  	
 	uidDec = 0;		
 	for (byte i = 0; i < mfrc522.uid.size; i++) //Функция вывода ID метки
@@ -120,13 +178,22 @@ void ShowUID() //Выводим ID метки в десятичном форма
 		uidDecTemp = mfrc522.uid.uidByte[i]; // Выдача серийного номера метки.
 		uidDec = uidDec * 256 + uidDecTemp;
 	}
-	Serial.print("Card UID: ");
-	Serial.println(uidDec); // Выводим UID метки в консоль.
+	//Serial.print("Card UID: ");
+	//Serial.println(uidDec); // Выводим UID метки в консоль.
+}
+
+void showUid() 
+{
+	
 }
 
 bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
 {
-	if(card == uidAdmin) return true;
+	if(card == uidAdmin) 
+	{
+		ReadWriteMode = true;
+		return true;
+	}
 	else return false;
 }
 
@@ -154,14 +221,187 @@ String ReadStringEEPROM(int address) //Прочитать строку из ее
 	return String(data);
   
 }
+String expression;
 
-char ReadSsidEEPROM() 
+static void PrintSSIDPasswordInfo()
 {
-
+	Serial.println("#03" + String(ReadStringEEPROM(SsidAdress) + ";"));
+	delay(100);
+	Serial.println("#04" + String(ReadStringEEPROM(PasswordAddress) + ";"));
 }
+
+String FindingEnding(char data[]) 
+{
+	for(int i = 3; i < amount; i++)
+	{
+		if(data[i] != ';')
+		{
+			expression += (char)data[i];
+		}
+		else
+		{
+			break;
+		}
+	}
+	return expression;
+}
+void ChangeSSID(String expression)
+{
+	WriteStringEEPROM(SsidAdress, expression);
+	EEPROM.commit();
+}
+
+void ChangePassword(String expression)
+{
+	WriteStringEEPROM(PasswordAddress, expression);
+	EEPROM.commit();
+}
+void ChooseCommand(char data[]) //3 шаг: Проверяем какую именно команду нам отправили
+{
+	if(data[2] == '0')
+	{
+		Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
+		ChangeSSID(FindingEnding(data));
+		expression = "";
+	}
+	else if(data[2] == '1')
+	{
+		Serial.println("ВЫПОЛНЯЕТСЯ КОМАНДА");
+		ChangePassword(FindingEnding(data));
+		expression = "";
+	}
+	else if(data[2] == '2')
+	{
+		PrintSSIDPasswordInfo();
+	}
+}
+
+void CheckForDistanation(char data[]) //2 шаг: Проверяем кому отправили данные
+{
+	if(data[1] == '1')
+	{
+		Serial.println("Это для ЕСП");
+		ChooseCommand(data);
+	}
+	else
+	{
+		Serial.println("Это для компьютера");
+		return;
+	}
+}
+
+bool CheckForEnding(char data[])
+{
+	for(int i = 0; i < Lenght; i++)
+	{
+		if(data[i] == ';')
+		{
+		return true;
+		}
+	}
+	return false;
+}
+
+void sendMessage(String Message)
+{
+	
+}
+
+void CheckForCommand(char data[]) //1 шаг: проверяем является ли командой 
+{
+	if(data[0] == '#' && CheckForEnding(data))
+	{
+		CheckForDistanation(data);
+	}
+	else
+	{
+		return;
+	}
+}
+
+static void SendDeletedRFID(unsigned long uidDec)
+{
+	Serial.println("#02" + (String)uidDec + ";");
+}
+
+static void SendAddedRFID(unsigned long uidDec)
+{
+	Serial.println("#01" + (String)uidDec + ";");
+}
+
+static void SendNewEvent(unsigned long uidDec)
+{
+	Serial.println("#05" + (String)uidDec + ";");
+}
+
+void WriteDeleteMode(unsigned long uidDec) //Для записи/удаления в мастер моде
+{
+	if (FindRfidEEPROM(uidDec)) //Если метка есть в базе
+	{
+		DeleteFromEEPROM(uidDec); //Удаляем
+		SendDeletedRFID(uidDec);
+		zoomerDelete();
+		RewriteEEPROMAfterDelete();
+	}
+	else //Если нет
+	{
+		WriteRfidEEPROM(uidDec); //Добавляем
+		SendAddedRFID(uidDec);
+		zoomerWrite();
+	}
+}
+
+void Master() //Метод для записи/удаления меток 
+{
+	while (timeMasterStart + masterTime > millis())
+	{
+		if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial())
+		{
+			
+			if (millis() - TimerOnShowTags >= 1000)
+			{	
+				getUid();
+				if(IsAdmin(uidDec))
+				{
+					return;
+				}
+				else
+				{
+					TimerOnShowTags = millis();
+					WriteDeleteMode(uidDec);
+					timeMasterStart = millis();
+				}
+			}
+		}
+
+
+		
+	}
+	
+}
+
+void CloseOpen(unsigned long uidDec) 
+{
+	if (FindRfidEEPROM(uidDec)) 
+	{
+		SendNewEvent(uidDec);
+		succes();
+	}
+	else 
+	{
+		reject();
+	}
+}
+
+//////////////////////////////////////////////////ВЫПОЛНЕНИЕ КОМАНД////////////////////////////////////////////////////////////////
+
+
 
 void setup() 
 {
+	expression = "";
+
+	pinMode(Zoomer, OUTPUT);
 	Serial.begin(115200);   // Инициализация сериал порта
   	while (!Serial);      // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
   	SPI.begin();          // Init SPI bus
@@ -169,7 +409,7 @@ void setup()
 
 	EEPROM.begin(1000);
 
-	char ssidBuf[EEPROM.read(SsidAdress)];
+	char ssidBuf[EEPROM.read(SsidAdress)]; 
  	ReadStringEEPROM(SsidAdress).toCharArray(ssidBuf, EEPROM.read(SsidAdress)+1);
 	char passwordBuf[EEPROM.read(PasswordAddress)];
 	ReadStringEEPROM(PasswordAddress).toCharArray(passwordBuf, EEPROM.read(SsidAdress)+1);
@@ -177,17 +417,43 @@ void setup()
 	ssid = ssidBuf;
 	password = passwordBuf;
 
+	Serial.println(ReadStringEEPROM(SsidAdress));
+
 	WiFi.begin(ssid, password);
 
+	bool connected = false;
+
+	for (size_t i = 0; i < 10; i++)
+	{
+		if (WiFi.status() != WL_CONNECTED)
+		{
+			delay(500);
+			Serial.println("...");
+		}
+		else
+		{
+			connected = true;
+			break;
+		}
+	}
+/*
 	while (WiFi.status() != WL_CONNECTED) 
     {
 		delay(500);
 		Serial.println("...");
 	}
- 
-  	Serial.print("WiFi connected with IP: ");
-	
 
+*/
+	if (connected == true)
+	{
+		Serial.println("WiFi connected with IP: ");
+	}
+	else
+	{
+		Serial.println("NO CONNECTION");
+	}
+
+	
 /*
 	Serial.println(EEPROM.read(RfidFreeAddress));
 	
@@ -201,33 +467,40 @@ void setup()
 */
 }
 
-void loop() 
-{
-	if ( ! mfrc522.PICC_IsNewCardPresent()) //Поиск новой метки
-	{
-    	return;
-  	}
 
-	if ( mfrc522.PICC_ReadCardSerial()) 
+
+void loop() 
+{	
+	if(Serial.available() > 1)
+  	{
+		char data[Lenght];
+		amount = Serial.readBytes(data, Lenght);
+		data[amount]= NULL;
+		CheckForCommand(data);
+ 	 }
+	  
+	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) //Поиск новой метки
 	{
 		if (millis() - TimerOnShowTags >= 2000)
 		{
+			getUid();
 			TimerOnShowTags = millis();
-			ShowUID();
-
-			if (FindRfidEEPROM(uidDec)) //Если метка есть в базе
+			if (IsAdmin(uidDec))
 			{
-				DeleteFromEEPROM(uidDec); //Удаляем
-				RewriteEEPROMAfterDelete();
+				enterMasterMode();
+				timeMasterStart = millis();
+				Master(); 
+				exitMasterMode();
+				TimerOnShowTags = millis();
 			}
-			else //Если нет
+			else
 			{
-				WriteRfidEEPROM(uidDec); //Добавляем
+				CloseOpen(uidDec);
+				
 			}
-			
 		}
-	}
-
-
+		
+		
+  	}
 
 }
