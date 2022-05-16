@@ -1,5 +1,4 @@
 /*
-
 -----------------
  MFRC522 | ESP32
 -----------------
@@ -20,15 +19,23 @@
 #include <WiFi.h>		
 #include <Thread.h>
 #include <serialEEPROM.h>
-
-
+#include <Adafruit_Fingerprint.h>
 
 #define RST_PIN 27	//22
 #define SS_PIN 5 //21
 #define Zoomer 32
 #define EEPROM_ADRESS 0x50
+#define RXD2 16
+#define TXD2 17
+
+int getFingerprintIDez();
+uint8_t getFingerprintEnroll();
+int findEmptyID();
+uint8_t deleteFingerprint(uint8_t id);
 
 serialEEPROM myEEPROM(EEPROM_ADRESS, 128, 16);
+//HardwareSerial Serial2(2);
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 
 //////////////////////////////////////////// АДРЕСА В ЕЕПРОМ ПАМЯТИ /////////////////////////////////////////
 
@@ -54,6 +61,9 @@ long timeStart;                 //  время, в которое сработа
 long timeMasterStart;           //  время, в которое запустился цикл добавления новой метки
 const int openTime = 200;     //  время, мс, на которое открывается замок
 const int masterTime = 7000;  //  время, на которое активируется режим добавления новой метки
+
+int IdFinger = 0;
+int FingerToDelete;
 
 bool ReadWriteMode = false; //Флаг для режима записи
 
@@ -401,18 +411,21 @@ void CloseOpen(unsigned long uidDec)
 
 //////////////////////////////////////////////////ВЫПОЛНЕНИЕ КОМАНД////////////////////////////////////////////////////////////////
 
-
-
 void setup() 
 {
 	expression = "";
 
 	pinMode(Zoomer, OUTPUT);
 	Serial.begin(115200);   // Инициализация сериал порта
+	Serial2.begin(5700, SERIAL_8N1, RXD2, TXD2);
   	while (!Serial);      // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
   	SPI.begin();          // Init SPI bus
+	finger.begin(57600);
   	mfrc522.PCD_Init();   // Init MFRC522
-
+	if (finger.verifyPassword()) 
+	{
+    	Serial.println("Found fingerprint sensor!");
+  	}
 	EEPROM.begin(1000);
 
 	char ssidBuf[EEPROM.read(SsidAdress)]; 
@@ -477,6 +490,7 @@ void setup()
 
 void loop() 
 {	
+	getFingerprintIDez();
 	if(Serial.available() > 1)
   	{
 		char data[Lenght];
@@ -509,4 +523,196 @@ void loop()
 		
   	}
 
+}
+int findFIngerID(uint8_t p)
+{
+    p = finger.fingerFastSearch();
+    if (p == FINGERPRINT_OK)  //if the searching fails it means that the template isn't registered
+    {         
+        return finger.fingerID;
+    }
+    return 0;
+}
+
+int findEmptyID()
+{
+    for (size_t i = 1; i < 128; i++)
+    {
+        if(!(finger.loadModel(i) == FINGERPRINT_OK))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int getFingerprintIDez() 
+{
+    uint8_t p = finger.getImage();        //Image scanning
+    if (p != FINGERPRINT_OK)  
+        return -1;  
+
+    p = finger.image2Tz();               //Converting
+    if (p != FINGERPRINT_OK)  
+        return -1;
+    
+    p = finger.fingerFastSearch();     //Looking for matches in the internal memory
+    if (p != FINGERPRINT_OK)  //if the searching fails it means that the template isn't registered
+    {         
+        Serial.println("Access denied");
+        delay(2000);
+        Serial.println("Place finger");
+        return -1;
+    }
+    //If we found a match we proceed in the function
+    if (finger.fingerID == 1)
+    {
+        getFingerprintEnroll();
+        return -1;
+    }
+
+    Serial.println("Welcome");        //Printing a message for the recognized template
+    Serial.print("ID: ");
+    
+    Serial.println(finger.fingerID); //And the ID of the finger template
+    return finger.fingerID; 
+}
+
+uint8_t getFingerprintEnroll() 
+{
+    IdFinger = findEmptyID();
+    if (IdFinger < 0)
+    {
+        Serial.println("Лимит меток");
+    }
+    int p = -1;
+    Serial.println(IdFinger);
+    Serial.println("Place finger to enroll"); //First step
+    while (p != FINGERPRINT_OK) 
+    {
+        p = finger.getImage();
+    }
+    // OK success!
+    p = finger.image2Tz(1);
+    switch (p) 
+    {
+        case FINGERPRINT_OK:
+                break;
+        case FINGERPRINT_IMAGEMESS:
+            return p;
+        case FINGERPRINT_PACKETRECIEVEERR:
+            return p;
+        case FINGERPRINT_FEATUREFAIL:
+            return p;
+        case FINGERPRINT_INVALIDIMAGE:
+            return p;
+        default:
+            return p;
+    }
+
+    FingerToDelete = findFIngerID(p);
+
+    if (FingerToDelete > 0 && FingerToDelete != 1)
+    {
+        deleteFingerprint(FingerToDelete);
+        return p;
+    }
+
+    Serial.print("Remove finger to enroll"); //After getting the first template successfully
+    delay(2000);
+    p = 0;
+    while (p != FINGERPRINT_NOFINGER) 
+    {
+        p = finger.getImage();
+    }
+
+    p = -1;
+
+    Serial.println("Place same finger please"); //We launch the same thing another time to get a second template of the same finger
+    while (p != FINGERPRINT_OK) 
+    {
+        p = finger.getImage();
+    }
+
+    // OK success!
+
+    p = finger.image2Tz(2);
+    switch (p) 
+    {
+        case FINGERPRINT_OK:
+            break;
+        case FINGERPRINT_IMAGEMESS:
+            return p;
+        case FINGERPRINT_PACKETRECIEVEERR:
+            return p;
+        case FINGERPRINT_FEATUREFAIL:
+            return p;
+        case FINGERPRINT_INVALIDIMAGE:
+            return p;
+        default:
+            return p;
+    }
+    
+    p = finger.createModel();
+    if (p == FINGERPRINT_OK) 
+    {
+    } 
+    else if (p == FINGERPRINT_PACKETRECIEVEERR) 
+    {
+            return p;
+    } 
+    else if (p == FINGERPRINT_ENROLLMISMATCH) 
+    {
+            return p;
+    } 
+    else 
+    {
+            return p;
+    }   
+    
+    p = finger.storeModel(IdFinger);
+    if (p == FINGERPRINT_OK) 
+    {
+        Serial.print("Stored in ID: ");    //Print a message after storing and showing the ID where it's stored
+        Serial.println(IdFinger);
+        //IdFinger++;
+        delay(3000);
+    } 
+    else if (p == FINGERPRINT_PACKETRECIEVEERR) 
+    {
+        return p;
+    } 
+    else if (p == FINGERPRINT_BADLOCATION) 
+    {
+        return p;
+    } 
+    else if (p == FINGERPRINT_FLASHERR) 
+    {
+        return p;
+    } 
+    else 
+    {
+        return p;
+    }   
+}
+
+uint8_t deleteFingerprint(uint8_t id) 
+{
+    uint8_t p = -1;
+
+    p = finger.deleteModel(id);
+
+    if (p == FINGERPRINT_OK) 
+    {
+        Serial.println("Finger with ID: " + (String)id + "Deleted!");
+    } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+        Serial.println("Communication error");
+    } else if (p == FINGERPRINT_BADLOCATION) {
+        Serial.println("Could not delete in that location");
+    } else if (p == FINGERPRINT_FLASHERR) {
+        Serial.println("Error writing to flash");
+    } else {
+        Serial.print("Unknown error: 0x"); Serial.println(p, HEX);
+    }
+    return p;
 }
