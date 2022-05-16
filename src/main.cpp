@@ -19,10 +19,16 @@
 #include <EEPROM.h>	
 #include <WiFi.h>		
 #include <Thread.h>
+#include <serialEEPROM.h>
 
-#define RST_PIN 22
-#define SS_PIN 21
+
+
+#define RST_PIN 27	//22
+#define SS_PIN 5 //21
 #define Zoomer 32
+#define EEPROM_ADRESS 0x50
+
+serialEEPROM myEEPROM(EEPROM_ADRESS, 128, 16);
 
 //////////////////////////////////////////// АДРЕСА В ЕЕПРОМ ПАМЯТИ /////////////////////////////////////////
 
