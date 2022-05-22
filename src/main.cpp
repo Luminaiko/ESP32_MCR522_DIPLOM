@@ -41,6 +41,9 @@ void WriteStringEEPROM(int address, String str);
 void SendMessage(String message);
 unsigned long CharArrayToLong(char data[]);
 void StringToCharArray(String message);
+void ChangeWiFiSSID(String expression);
+void WifiConnect();
+
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 
 //////////////////////////////////////////// АДРЕСА В ЕЕПРОМ ПАМЯТИ /////////////////////////////////////////
@@ -87,7 +90,6 @@ WiFiClient client;
 class RFID
 {
 private:
-	
 	static void WriteRfidEEPROM(unsigned long value) //запись карты в EEPROM
 	{
 			byte four = (value & 0xFF);
@@ -103,8 +105,6 @@ private:
 			EEPROM.write(RfidFreeAddress, EEPROM.read(RfidFreeAddress) + 4);
 			EEPROM.commit();
 	}
-	
-	
 	static unsigned long ReadRfidEEPROM(byte address) //Чтение карты из EEPROM
 	{
 		long four = EEPROM.read(address);
@@ -180,6 +180,7 @@ public:
 		return false;
 		
 	}
+
 	static void GetRFIDId() //Выводим ID метки в десятичном формате
 	{  	
 		uidDec = 0;		
@@ -225,7 +226,8 @@ public:
 			RewriteEEPROMAfterDelete();
 		}
 		else //Если нет
-		{
+		{	
+
 			WriteRfidEEPROM(uidDec); //Добавляем
 			SendAddedRFID(uidDec);
 			zoomerWrite();
@@ -514,6 +516,14 @@ private:
 			DeleteRFID(FindingEnding(data));
 			expression = "";
 		}
+		else if(data[2] == '4')
+		{
+			ChangeWiFiSSID(data);
+		}
+		else if(data[2] == '5')
+		{
+			ChangeWiFiPassword(data);
+		}
 	}
 	static bool CheckForEnding(char data[])
 	{
@@ -541,15 +551,7 @@ private:
 		}
 		return expression;
 	}
-	///Команды на выполнение
-	/*static void PrintSSIDPasswordInfo()
-	{
-		SendMessage("#03" + String(ReadStringEEPROM(SsidAdress) + ";"));
-		Serial.println("#03" + String(ReadStringEEPROM(SsidAdress) + ";"));
-		delay(100);
-		SendMessage("#04" + String(ReadStringEEPROM(PasswordAddress) + ";"));
-		Serial.println("#04" + String(ReadStringEEPROM(PasswordAddress) + ";"));
-	}*/
+
 	static void ChangeSSID(String expression)
 	{
 		WriteStringEEPROM(SsidAdress, expression);
@@ -584,6 +586,18 @@ private:
 			Serial.println("RFID NETU ");
 		}
 	}
+	static void ChangeWiFiSSID(char data[])
+	{
+		WriteStringEEPROM(SsidAdress, FindingEnding(data));
+		WiFi.disconnect();
+		WifiConnect();
+	}
+	static void ChangeWiFiPassword(char data[])
+	{
+		WriteStringEEPROM(PasswordAddress, FindingEnding(data));
+		WiFi.disconnect();
+		WifiConnect();
+	}
 public:
 	static void CheckForCommand(char data[]) //1 шаг: проверяем является ли командой 
 	{
@@ -600,9 +614,9 @@ public:
 
 unsigned long CharArrayToLong(char data[])
 {
-	Serial.print("Я ВЕРНУЛ ЭТО ЗНАЧЕНИЕ: ");
+	//Serial.print("Я ВЕРНУЛ ЭТО ЗНАЧЕНИЕ: ");
 	unsigned long x = strtoul(data, NULL, 10);
-	Serial.println(x);
+	//Serial.println(x);
 	return x;
 }
 
@@ -659,6 +673,7 @@ void WifiConnect()
 	ssid = ssidBuf;
 	password = passwordBuf;
 	Serial.println(ReadStringEEPROM(SsidAdress));
+	Serial.println(ReadStringEEPROM(PasswordAddress));
 	WiFi.begin(ssid, password);
 	bool connected = false;
 	for (size_t i = 0; i < 10; i++)
@@ -683,6 +698,7 @@ void WifiConnect()
 	{
 		Serial.println("NO CONNECTION");
 	}
+	
 }
 
 void SendMessage(String message) 
