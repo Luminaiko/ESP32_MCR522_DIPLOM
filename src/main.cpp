@@ -2,13 +2,13 @@
 -----------------
  MFRC522 | ESP32
 -----------------
-     SDA | 21
-     SCK | 18
-    MOSI | 23
-    MISO | 19
+     SDA | d5
+     SCK | d18
+    MOSI | d23
+    MISO | d19
      IRQ | N/A
      GND | GND
-     RST | 22
+     RST | d27
     3.3V | 3.3V
 */
 #include <SPI.h>
@@ -670,10 +670,17 @@ void WifiConnect()
 	char passwordBuf[EEPROM.read(PasswordAddress)];
 	ReadStringEEPROM(PasswordAddress).toCharArray(passwordBuf, EEPROM.read(SsidAdress)+1);
 
+	IPAddress local_ip(192, 168, 1, 5);
+	IPAddress gateway(192, 168, 1, 1);
+	IPAddress subnet(255,255,255,0);
+	IPAddress dns(8,8,8,8);
+
 	ssid = ssidBuf;
 	password = passwordBuf;
 	Serial.println(ReadStringEEPROM(SsidAdress));
 	Serial.println(ReadStringEEPROM(PasswordAddress));
+	WiFi.config(local_ip, gateway, subnet, dns);
+
 	WiFi.begin(ssid, password);
 	bool connected = false;
 	for (size_t i = 0; i < 10; i++)
