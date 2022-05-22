@@ -10,6 +10,10 @@
      GND | GND
      RST | d27
     3.3V | 3.3V
+
+	FINGER
+	rx- tx2
+	tx - rx2
 */
 #include <SPI.h>
 #include <Arduino.h>
