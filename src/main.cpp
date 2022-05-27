@@ -26,8 +26,9 @@
 
 #define RST_PIN 27	//22
 #define SS_PIN 5 //21
+#define SS_PIN2 21
 #define Zoomer 32
-#define EEPROM_ADRESS 0x50 
+//#define EEPROM_ADRESS 0x50 
 #define RXD2 16
 #define TXD2 17
 
@@ -54,7 +55,11 @@ Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 
 #define RfidFreeAddress 200 //Адрес ячейки для хранения свободного адреса для записи 
 #define SsidAdress 495 //Адрес ячеййки для хранения SSID роутера
-#define PasswordAddress 480 //адрес для хранения пароля от роутера
+#define PasswordAddress 479 //адрес для хранения пароля от роутера
+#define LocalIPAdress 463 //Адрес для хранения адреса хоста
+#define gatewayAdress 447
+#define subnetAdress 431
+#define DNSAdress 415
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 const int Lenght = 20;
@@ -63,6 +68,9 @@ int amount;
 int port = 8000;
 const char* ssid;
 const char* password;
+const char* gateway;
+const char* subnet;
+const char* dns;
 const char* host = "192.168.1.3";
 
 uint32_t TimerOnShowTags;
@@ -88,6 +96,7 @@ uint32_t Timer;
 bool ReadWriteMode = false; //Флаг для режима записи
 
 MFRC522 mfrc522(SS_PIN, RST_PIN); // Создание обьекта RFID
+MFRC522 mfrc522_2(SS_PIN2, RST_PIN);
 WiFiServer wifiServer(port);
 WiFiClient client;
 
@@ -193,7 +202,7 @@ public:
 			uidDecTemp = mfrc522.uid.uidByte[i]; // Выдача серийного номера метки.
 			uidDec = uidDec * 256 + uidDecTemp;
 		}
-		//Serial.print("Card UID: ");
+		Serial.print("Card UID: ");
 		//Serial.println(uidDec); // Выводим UID метки в консоль.
 	}
 	static bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
@@ -515,8 +524,6 @@ private:
 		}
 		else if(data[2] == '3') 
 		{
-			//Serial.print("FINDING ENDING = ");
-			//Serial.println(FindingEnding(data));
 			DeleteRFID(FindingEnding(data));
 			expression = "";
 		}
@@ -525,6 +532,10 @@ private:
 			ChangeWiFiSSID(data);
 		}
 		else if(data[2] == '5')
+		{
+			ChangeWiFiPassword(data);
+		}
+		else if(data[2] == '6')
 		{
 			ChangeWiFiPassword(data);
 		}
@@ -602,6 +613,11 @@ private:
 		WiFi.disconnect();
 		WifiConnect();
 	}
+	static void ChangeLocalIP(String expression)
+	{
+		WriteStringEEPROM(LocalIPAdress, expression);
+		EEPROM.commit();
+	}
 public:
 	static void CheckForCommand(char data[]) //1 шаг: проверяем является ли командой 
 	{
@@ -667,6 +683,8 @@ String ReadStringEEPROM(int address) //Прочитать строку из ее
   
 }
 
+//void Change
+
 void WifiConnect() 
 {
 	char ssidBuf[EEPROM.read(SsidAdress)]; 
@@ -674,17 +692,28 @@ void WifiConnect()
 	char passwordBuf[EEPROM.read(PasswordAddress)];
 	ReadStringEEPROM(PasswordAddress).toCharArray(passwordBuf, EEPROM.read(SsidAdress)+1);
 
-	IPAddress local_ip(192, 168, 1, 5);
+	/*char localIPBuf[EEPROM.read(LocalIPAdress)];
+	ReadStringEEPROM(LocalIPAdress).toCharArray(localIPBuf, EEPROM.read(LocalIPAdress)+1);
+	char gatewayBuf[EEPROM.read(gatewayAdress)];
+	ReadStringEEPROM(gatewayAdress).toCharArray(gatewayBuf, EEPROM.read(gatewayAdress)+1);
+	char subnetBuf[EEPROM.read(LocalIPAdress)];
+	ReadStringEEPROM(subnetAdress).toCharArray(subnetBuf, EEPROM.read(subnetAdress)+1);
+	char dnsBuf[EEPROM.read(DNSAdress)];
+	ReadStringEEPROM(DNSAdress).toCharArray(dnsBuf, EEPROM.read(DNSAdress)+1);*/
+
+
+	IPAddress local_ip(192,168,1,3);
 	IPAddress gateway(192, 168, 1, 1);
 	IPAddress subnet(255,255,255,0);
 	IPAddress dns(8,8,8,8);
-
+	
 	ssid = ssidBuf;
 	password = passwordBuf;
+	
 	Serial.println(ReadStringEEPROM(SsidAdress));
 	Serial.println(ReadStringEEPROM(PasswordAddress));
 	WiFi.config(local_ip, gateway, subnet, dns);
-
+	client.setTimeout(2000);
 	WiFi.begin(ssid, password);
 	bool connected = false;
 	for (size_t i = 0; i < 10; i++)
@@ -714,7 +743,7 @@ void WifiConnect()
 
 void SendMessage(String message) 
 {
-	client.connect(host, port);
+	client.connect(host, port, 1500);
 	client.print(message);
 	client.stop();
 }
@@ -746,6 +775,7 @@ void setup()
   	SPI.begin();          // Init SPI bus
 	finger.begin(57600);
   	mfrc522.PCD_Init();   // Init MFRC522
+	mfrc522_2.PCD_Init();
 	if (finger.verifyPassword()) 
 	{
     	Serial.println("Found fingerprint sensor!");
@@ -791,7 +821,7 @@ void loop()
  	 }
 
 	Fingerprint::getFingerprintIDez();
-	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) //Поиск новой метки
+	if ((mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) || (mfrc522_2.PICC_IsNewCardPresent() && mfrc522_2.PICC_ReadCardSerial())) //Поиск новой метки
 	{
 		if (millis() - TimerOnShowTags >= 2000)
 		{
@@ -811,8 +841,6 @@ void loop()
 				
 			}
 		}
-		
-		
   	}
 
 }
