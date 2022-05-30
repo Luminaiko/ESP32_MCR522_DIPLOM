@@ -20,16 +20,15 @@
 #include <MFRC522.h>  	
 #include <EEPROM.h>	
 #include <WiFi.h>		
-#include <Thread.h>
-#include <serialEEPROM.h>
 #include <Adafruit_Fingerprint.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h> 
 
 #define RST_PIN 27	//22
 #define SS_PIN 5 //21
-#define SS_PIN2 21
+#define SS_PIN2 4  //21
 #define SS_PIN3 23
 #define Zoomer 32
-//#define EEPROM_ADRESS 0x50 
 #define RXD2 16
 #define TXD2 17
 
@@ -72,7 +71,7 @@ Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 #define SubnetSecond 445  //Адрес для хранения шлюза второго октета
 #define SubnetThird 443	//Адрес для хранения шлюза третьего октета
 #define SubnetFourth 441	//Адрес для хранения шлюза четвертого октета
-#define HostAdress 425
+#define HostAdress 425	//Адрес для хранения адреса хоста
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 const int Lenght = 20;
@@ -84,9 +83,9 @@ const char* password;
 const char* gateway;
 const char* subnet;
 const char* dns;
-const char* host; //= "192.168.1.2";
-
+const char* host; 
 uint32_t TimerOnShowTags;
+
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
 int deleteAdress; //Начальный адрес для удаления метки если такая есть
@@ -118,6 +117,7 @@ MFRC522 mfrc522_2(SS_PIN2, RST_PIN);
 MFRC522 mfrc522_3(SS_PIN3, RST_PIN);
 WiFiServer wifiServer(port);
 WiFiClient client;
+LiquidCrystal_I2C lcd(0x27,20,4);
 
 class RFID
 {
@@ -250,10 +250,6 @@ public:
 		{
 			succes();
 			SendNewEvent(uidDec);
-			//client.connect(host, port);
-			//client.print(uidDec);
-			//client.stop();
-			
 		}
 		else 
 		{
@@ -498,9 +494,14 @@ public:
 		p = finger.fingerFastSearch();     //Looking for matches in the internal memory
 		if (p != FINGERPRINT_OK)  //if the searching fails it means that the template isn't registered
 		{         
-			Serial.println("Access denied");
-			delay(100);
-			Serial.println("Place finger");
+			lcd.clear();
+			lcd.setCursor(7,1);
+			lcd.print("Access");
+			lcd.setCursor(7,2);
+			lcd.print("denied");
+			reject();
+			delay(2000);
+			lcd.clear();
 			return -1;
 		}
 		//If we found a match we proceed in the function
@@ -509,10 +510,18 @@ public:
 			getFingerprintEnroll();
 			return -1;
 		}
-
-		Serial.println("Welcome");        //Printing a message for the recognized template
-		Serial.print("ID: ");
 		
+		lcd.clear();
+		lcd.setCursor(7,1);
+		lcd.print("Welcome");
+		lcd.setCursor(8,2);
+		lcd.print("ID: ");
+		lcd.setCursor(11,2);
+		lcd.print(finger.fingerID);
+		succes();
+		delay(1000);
+		lcd.clear();
+
 		Serial.println(finger.fingerID); //And the ID of the finger template
 		return finger.fingerID; 
 	}
@@ -923,9 +932,9 @@ void setup()
 	mfrc522_3.PCD_Init();
 	Serial.println(WiFi.localIP());
 
-	
-	Serial.print("Хост в сетапе = ");
-	Serial.println(host);
+	lcd.init();                      // initialize the lcd 
+  	lcd.backlight();
+
 }
 
 void serialFlush()
@@ -938,7 +947,6 @@ void serialFlush()
 void loop() 
 {	
 	WiFiClient client = wifiServer.available();
-
 	if (client) 
 	{
 		while (client.connected()) 
@@ -968,7 +976,13 @@ void loop()
 		Command::CheckForCommand(data);
 		
  	}
-
+	lcd.setCursor(7, 0);
+	lcd.print("Place"); 
+	lcd.setCursor(8, 1);
+	lcd.print("New");
+	lcd.setCursor(7, 2);
+	lcd.print("Finger");
+	
 	Fingerprint::getFingerprintIDez();
 	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) //Поиск новой метки
 	{
