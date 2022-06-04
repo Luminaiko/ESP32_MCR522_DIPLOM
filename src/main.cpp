@@ -27,8 +27,9 @@
 #define RST_PIN 27	//22
 #define SS_PIN 5 //21
 #define SS_PIN2 4  //21
-#define SS_PIN3 23
+#define SS_PIN3 2
 #define Zoomer 32
+#define ButtonOut 15
 #define RXD2 16
 #define TXD2 17
 
@@ -85,6 +86,7 @@ const char* subnet;
 const char* dns;
 const char* host; 
 uint32_t TimerOnShowTags;
+uint32_t TimerButton;
 
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
@@ -221,8 +223,8 @@ public:
 			uidDecTemp = mfrc522.uid.uidByte[i]; // Выдача серийного номера метки.
 			uidDec = uidDec * 256 + uidDecTemp;
 		}
-		//Serial.print("Card UID: ");
-		//Serial.println(uidDec); // Выводим UID метки в консоль.
+		Serial.print("Card UID: ");
+		Serial.println(uidDec); // Выводим UID метки в консоль.
 	}
 	static void GetRFIDId2() //Выводим ID метки в десятичном формате
 	{  	
@@ -232,8 +234,8 @@ public:
 			uidDecTemp = mfrc522_2.uid.uidByte[i]; // Выдача серийного номера метки.
 			uidDec = uidDec * 256 + uidDecTemp;
 		}
-		//Serial.print("Card UID: ");
-		//Serial.println(uidDec); // Выводим UID метки в консоль.
+		Serial.print("Card UID: ");
+		Serial.println(uidDec); // Выводим UID метки в консоль.
 	}
 	static bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
 	{
@@ -912,7 +914,7 @@ void StringToIp(String message)
 void setup() 
 {
 	expression = "";
-
+	pinMode(ButtonOut, INPUT);
 	pinMode(Zoomer, OUTPUT);
 	Serial.begin(115200);   // Инициализация сериал порта
 	Serial2.begin(5700, SERIAL_8N1, RXD2, TXD2);
@@ -1024,11 +1026,18 @@ void loop()
 			}
 		}
 	}
-	/*if (mfrc522_3.PICC_IsNewCardPresent() && mfrc522_3.PICC_ReadCardSerial())
+
+	if (millis() - TimerButton >= 2000 && digitalRead(ButtonOut) == HIGH) 
+	{ 
+		TimerButton = millis();
+		succes();
+	}
+
+	if (mfrc522_3.PICC_IsNewCardPresent() && mfrc522_3.PICC_ReadCardSerial())
 	{
 		succes();
 		Serial.println("KARTA PODNESENA");
-	}*/
+	}
 
 }
 
