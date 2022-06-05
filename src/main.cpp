@@ -94,15 +94,19 @@ const char* dns;
 const char* host; 
 uint32_t TimerOnShowTags;
 uint32_t TimerButton;
+bool ClientAvailable;
+int MenuPosition;
 
 int MaxRFIDTags = 50;	//Максимальное количество RFID меток
 int maxAvailableAdress = MaxRFIDTags * 4;	//Максимальный адрес занимаемый метками
 int deleteAdress; //Начальный адрес для удаления метки если такая есть
 unsigned long uidDec, uidDecTemp; // для хранения номера метки в десятичном формате
 unsigned long uidAdmin = 3544981781; // Номер метки админа
-
+bool connected;
+bool ConnectedToServer;
 long timeStart;                 //  время, в которое сработала карта
 long timeMasterStart;           //  время, в которое запустился цикл добавления новой метки
+long timerOnCheckCOnnection;
 const int openTime = 200;     //  время, мс, на которое открывается замок
 const int masterTime = 7000;  //  время, на которое активируется режим добавления новой метки
 
@@ -197,7 +201,6 @@ private:
 		SendMessage("#00" + (String)uidDec + ";");
 		Serial.println("#00" + (String)uidDec + ";");
 	}
-	
 public:
 	static void DeleteFromEEPROM(unsigned long value) //Удаление метки из EEPROM
 	{	
@@ -520,7 +523,6 @@ private:
 			lcd.setCursor(8, 3);
 			lcd.print(IdFinger);
 			Serial.println(IdFinger);
-			//IdFinger++;
 			delay(3000);
 			lcd.clear();
 		} 
@@ -602,7 +604,6 @@ public:
 		succes2();
 		delay(1000);
 		lcd.clear();
-
 		Serial.println(finger.fingerID); //And the ID of the finger template
 		return finger.fingerID; 
 	}
@@ -858,6 +859,11 @@ String ReadStringEEPROM(int address) //Прочитать строку из ее
   
 }
 
+void UpdateMenu() 
+{
+
+}
+
 void WifiConnect() 
 {
 	char ssidBuf[EEPROM.read(SsidAdress)]; 
@@ -884,7 +890,7 @@ void WifiConnect()
 
 	WiFi.config(local_ip, gateway, subnet);
 	WiFi.begin(ssid, password);
-	bool connected = false;
+	connected = false;
 	for (size_t i = 0; i < 10; i++)
 	{
 		if (WiFi.status() != WL_CONNECTED)
@@ -917,11 +923,15 @@ void SendMessage(String message)
 	ReadStringEEPROM(HostAdress).toCharArray(hostBuf, EEPROM.read(HostAdress)+1);
 	host = hostBuf;
 	Serial.println("Отправляем данные на " + (String)host);
-	client.connect(host, port, 1000);
+	if(!client.connect(host, port, 1000))
+	{
+		digitalWrite(Red,LOW);
+		digitalWrite(Blue, HIGH);
+
+	}
 	client.print(message);
 	client.stop();
 }
-
 void StringToCharArray(String message) 
 {
 	for (int i = 0; i < Lenght; i++)
@@ -1021,7 +1031,7 @@ void setup()
 	pinMode(Blue, OUTPUT);
 	pinMode(Enter1, OUTPUT);
 	pinMode(Enter2, OUTPUT);
-
+	
 	Serial.begin(115200);   // Инициализация сериал порта
 	Serial2.begin(5700, SERIAL_8N1, RXD2, TXD2);
   	while (!Serial);      // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
@@ -1043,6 +1053,7 @@ void setup()
 	lcd.init();                      // initialize the lcd 
   	lcd.backlight();
 	
+	
 }
 
 void loop() 
@@ -1054,10 +1065,20 @@ void loop()
 		{
 			while (client.available() > 0) 
 			{
+				ClientAvailable = true;
+				
 				char c = client.read();
-				//Serial.write(c);
 				message += (String)c;
 			}
+
+			if (message == "Test")
+			{
+				ConnectedToServer == true;
+				digitalWrite(Blue, LOW);
+				digitalWrite(Green, LOW);
+				digitalWrite(Red, HIGH);
+			}
+			
 			StringToCharArray(message);
 
 			Serial.println(DataRecieved);
@@ -1066,7 +1087,6 @@ void loop()
 			client.stop();
 			break;
 		}
-		Serial.println("Client disconnected");
 	}
 
 	if(Serial.available() > 1)
@@ -1088,6 +1108,7 @@ void loop()
 	lcd.print("Finger");
 	
 	Fingerprint::getFingerprintIDez();
+
 	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) //Поиск новой метки
 	{
 		if (millis() - TimerOnShowTags >= 2000)
@@ -1123,6 +1144,13 @@ void loop()
 				TimerOnShowTags = millis();
 			}
 		}
+	}
+
+	if (millis() - timerOnCheckCOnnection >= 10000 && ConnectedToServer != true)
+	{
+		
+		timerOnCheckCOnnection = millis();
+		SendMessage("#00;");
 	}
 
 	if (millis() - TimerButton >= 2000 && digitalRead(ButtonOut) == HIGH) 
