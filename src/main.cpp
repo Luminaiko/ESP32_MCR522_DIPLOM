@@ -32,7 +32,13 @@
 #define ButtonOut 15
 #define RXD2 16
 #define TXD2 17
+#define Red 14
+#define Green 12
+#define Blue 13
+#define Enter1 26
+#define Enter2 25
 
+void succes2();
 void StringToIp(String message);
 void WriteIntEEPROM(int address, int number);
 int readIntEEPROM(int address);
@@ -52,6 +58,7 @@ unsigned long CharArrayToLong(char data[]);
 void StringToCharArray(String message);
 void ChangeWiFiSSID(String expression);
 void WifiConnect();
+void EmptyAllRecords();
 
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 
@@ -170,6 +177,11 @@ private:
 		SendMessage("#05" + (String)uidDec + ";");
 		Serial.println("#05" + (String)uidDec + ";");
 	}
+	static void SendNewEventExit(unsigned long uidDec)
+	{
+		SendMessage("#06" + (String)uidDec + ";");
+		Serial.println("#06" + (String)uidDec + ";");
+	}
 	static void SendDeletedRFID(unsigned long uidDec)
 	{
 		SendMessage("#02" + (String)uidDec + ";");
@@ -179,6 +191,11 @@ private:
 	{
 		SendMessage("#01" + (String)uidDec + ";");
 		Serial.println("#01" + (String)uidDec + ";");
+	}
+	static void SendShowedRFID(unsigned long uidDec)
+	{
+		SendMessage("#00" + (String)uidDec + ";");
+		Serial.println("#00" + (String)uidDec + ";");
 	}
 	
 public:
@@ -237,6 +254,17 @@ public:
 		Serial.print("Card UID: ");
 		Serial.println(uidDec); // Выводим UID метки в консоль.
 	}
+	static void GetRFIDId3() //Выводим ID метки в десятичном формате
+	{  	
+		uidDec = 0;		
+		for (byte i = 0; i < mfrc522_3.uid.size; i++) //Функция вывода ID метки
+		{
+			uidDecTemp = mfrc522_3.uid.uidByte[i]; // Выдача серийного номера метки.
+			uidDec = uidDec * 256 + uidDecTemp;
+		}
+		Serial.print("Card UID: ");
+		Serial.println(uidDec); // Выводим UID метки в консоль.
+	}
 	static bool IsAdmin(unsigned long card) //Функция проверки является ли карта админской
 	{
 		if(card == uidAdmin) 
@@ -258,6 +286,18 @@ public:
 			reject();
 		}
 	}
+	static void CloseOpen2(unsigned long uidDec) 
+	{
+		if (FindRfidEEPROM(uidDec)) 
+		{
+			succes();
+			SendNewEventExit(uidDec);
+		}
+		else 
+		{
+			reject();
+		}
+	}
 	static void WriteDeleteMode(unsigned long uidDec) //Для записи/удаления в мастер моде
 	{
 		if (FindRfidEEPROM(uidDec)) //Если метка есть в базе
@@ -269,22 +309,21 @@ public:
 		}
 		else //Если нет
 		{	
-
 			WriteRfidEEPROM(uidDec); //Добавляем
 			SendAddedRFID(uidDec);
 			zoomerWrite();
 		}
 	}
+
 	static void Master() //Метод для записи/удаления меток 
 	{
 		while (timeMasterStart + masterTime > millis())
 		{
-			if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial())
+			if (mfrc522_3.PICC_IsNewCardPresent() && mfrc522_3.PICC_ReadCardSerial())
 			{
-				
 				if (millis() - TimerOnShowTags >= 1000)
 				{	
-					GetRFIDId();
+					GetRFIDId3();
 					if(IsAdmin(uidDec))
 					{
 						return;
@@ -299,6 +338,7 @@ public:
 			}
 		}
 	}
+
 	static void enterMasterMode() //  функция открытия замка 
 	{                      
 		for (uint8_t n=0; n<=3; n++)
@@ -319,7 +359,6 @@ public:
 			delay(300);
 		}
 	}
-
 };
 
 class Fingerprint //Класс с методами для работы с отпечатком пальца
@@ -333,7 +372,18 @@ private:
 
 		if (p == FINGERPRINT_OK) 
 		{
-			Serial.println("Finger with ID: " + (String)id + "Deleted!");
+			lcd.clear();
+			lcd.setCursor(8,0);
+			lcd.print("Finger with");
+			lcd.setCursor(8,1);
+			lcd.print("id: ");
+			lcd.setCursor(8,2);
+			lcd.print(id);
+			lcd.print("Deleted");
+			lcd.setCursor(8,3);
+			delay(2000);
+			lcd.clear();
+
 		} else if (p == FINGERPRINT_PACKETRECIEVEERR) {
 			Serial.println("Communication error");
 		} else if (p == FINGERPRINT_BADLOCATION) {
@@ -353,8 +403,16 @@ private:
 			Serial.println("Лимит меток");
 		}
 		int p = -1;
-		Serial.println(IdFinger);
-		Serial.println("Place finger to enroll"); //First step
+		lcd.clear();
+		lcd.setCursor(7, 0);
+		lcd.print("Place"); 
+		lcd.setCursor(8, 1);
+		lcd.print("New");
+		lcd.setCursor(7, 2);
+		lcd.print("Finger");
+		lcd.setCursor(7, 3);
+		lcd.print("To enroll");
+		
 		while (p != FINGERPRINT_OK) 
 		{
 			p = finger.getImage();
@@ -385,7 +443,11 @@ private:
 			return p;
 		}
 
-		Serial.print("Remove finger to enroll"); //After getting the first template successfully
+		lcd.clear();
+		lcd.setCursor(7, 0);
+		lcd.print("Remove"); 
+		lcd.setCursor(8, 1);
+		lcd.print("Finger");
 		delay(2000);
 		p = 0;
 		while (p != FINGERPRINT_NOFINGER) 
@@ -395,7 +457,15 @@ private:
 
 		p = -1;
 
-		Serial.println("Place same finger please"); //We launch the same thing another time to get a second template of the same finger
+		lcd.clear();
+		lcd.setCursor(7, 0);
+		lcd.print("Place"); 
+		lcd.setCursor(8, 1);
+		lcd.print("Same");
+		lcd.setCursor(8, 2);
+		lcd.print("Finger");
+		lcd.setCursor(8, 3);
+		lcd.print("Again");
 		while (p != FINGERPRINT_OK) 
 		{
 			p = finger.getImage();
@@ -440,10 +510,19 @@ private:
 		p = finger.storeModel(IdFinger);
 		if (p == FINGERPRINT_OK) 
 		{
-			Serial.print("Stored in ID: ");    //Print a message after storing and showing the ID where it's stored
+			lcd.clear();
+			lcd.setCursor(7, 0);
+			lcd.print("Stored"); 
+			lcd.setCursor(8, 1);
+			lcd.print("Finger");
+			lcd.setCursor(8, 2);
+			lcd.print("id = ");
+			lcd.setCursor(8, 3);
+			lcd.print(IdFinger);
 			Serial.println(IdFinger);
 			//IdFinger++;
 			delay(3000);
+			lcd.clear();
 		} 
 		else if (p == FINGERPRINT_PACKETRECIEVEERR) 
 		{
@@ -482,6 +561,7 @@ private:
 		}
 		return -1;
 	}
+	
 public:
 	static int getFingerprintIDez() 
 	{
@@ -501,7 +581,6 @@ public:
 			lcd.print("Access");
 			lcd.setCursor(7,2);
 			lcd.print("denied");
-			reject();
 			delay(2000);
 			lcd.clear();
 			return -1;
@@ -520,7 +599,7 @@ public:
 		lcd.print("ID: ");
 		lcd.setCursor(11,2);
 		lcd.print(finger.fingerID);
-		succes();
+		succes2();
 		delay(1000);
 		lcd.clear();
 
@@ -528,6 +607,16 @@ public:
 		return finger.fingerID; 
 	}
 
+	static void EmptyAllRecords()
+	{
+		finger.emptyDatabase();
+		lcd.clear();
+		lcd.setCursor(0,0);
+		lcd.print("Place new");
+		lcd.setCursor(1,0);
+		lcd.print("Admin finger");
+		getFingerprintEnroll(); 
+	}
 };
 
 class Command
@@ -562,7 +651,7 @@ private:
 		}
 		else if(data[2] == '2')
 		{
-			//PrintSSIDPasswordInfo();
+			Fingerprint::EmptyAllRecords();
 		}
 		else if(data[2] == '3') 
 		{
@@ -718,10 +807,19 @@ unsigned long CharArrayToLong(char data[])
 }
 
 void succes() //  функция открытия замка 
-{                      
+{              
+	digitalWrite(Enter1, HIGH);        
 	digitalWrite(Zoomer, HIGH);
 	delay(1000);
 	digitalWrite(Zoomer, LOW);
+	digitalWrite(Enter1, LOW);
+}
+
+void succes2() //  функция открытия замка 
+{              
+	digitalWrite(Enter2, HIGH);   
+	delay(2000);
+	digitalWrite(Enter2, LOW);
 }
 
 void reject() //  функция отказа в открытии замка
@@ -803,11 +901,13 @@ void WifiConnect()
 
 	if (connected == true)
 	{
+		digitalWrite(Blue, HIGH);
 		Serial.println("WiFi connected with IP: ");
 	}
 	else
 	{
 		Serial.println("NO CONNECTION");
+		digitalWrite(Red, HIGH);
 	}
 	
 }
@@ -916,6 +1016,12 @@ void setup()
 	expression = "";
 	pinMode(ButtonOut, INPUT);
 	pinMode(Zoomer, OUTPUT);
+	pinMode(Red, OUTPUT);
+	pinMode(Green, OUTPUT);
+	pinMode(Blue, OUTPUT);
+	pinMode(Enter1, OUTPUT);
+	pinMode(Enter2, OUTPUT);
+
 	Serial.begin(115200);   // Инициализация сериал порта
 	Serial2.begin(5700, SERIAL_8N1, RXD2, TXD2);
   	while (!Serial);      // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
@@ -936,14 +1042,7 @@ void setup()
 
 	lcd.init();                      // initialize the lcd 
   	lcd.backlight();
-
-}
-
-void serialFlush()
-{
-  while(Serial.available() > 0) {
-    char t = Serial.read();
-  }
+	
 }
 
 void loop() 
@@ -976,7 +1075,10 @@ void loop()
 		amount = Serial.readBytes(data, Lenght);
 		data[amount]= NULL;
 		Command::CheckForCommand(data);
-		
+		for (int i = 0; i < Lenght; i++)
+		{
+			data[i] = 0;
+		}
  	}
 	lcd.setCursor(7, 0);
 	lcd.print("Place"); 
@@ -992,37 +1094,33 @@ void loop()
 		{
 			RFID::GetRFIDId();
 			TimerOnShowTags = millis();
-			if (RFID::IsAdmin(uidDec))
-			{
-				RFID::enterMasterMode();
-				timeMasterStart = millis();
-				RFID::Master(); 
-				RFID::exitMasterMode();
-				TimerOnShowTags = millis();
-			}
-			else
-			{
-				RFID::CloseOpen(uidDec);
-			}
+			RFID::CloseOpen(uidDec);
 		}
   	}
+
 	if (mfrc522_2.PICC_IsNewCardPresent() && mfrc522_2.PICC_ReadCardSerial())
 	{
 		if (millis() - TimerOnShowTags >= 2000)
 		{
 			RFID::GetRFIDId2();
 			TimerOnShowTags = millis();
-			if (RFID::IsAdmin(uidDec))
+			RFID::CloseOpen2(uidDec);
+		}
+	}
+	
+	if (mfrc522_3.PICC_IsNewCardPresent() && mfrc522_3.PICC_ReadCardSerial())
+	{
+		if (millis() - TimerOnShowTags >= 2000)
+		{
+			RFID::GetRFIDId3();
+			TimerOnShowTags = millis();
+			if(RFID::IsAdmin(uidDec))
 			{
 				RFID::enterMasterMode();
 				timeMasterStart = millis();
 				RFID::Master(); 
 				RFID::exitMasterMode();
 				TimerOnShowTags = millis();
-			}
-			else
-			{
-				RFID::CloseOpen(uidDec);
 			}
 		}
 	}
@@ -1030,13 +1128,7 @@ void loop()
 	if (millis() - TimerButton >= 2000 && digitalRead(ButtonOut) == HIGH) 
 	{ 
 		TimerButton = millis();
-		succes();
-	}
-
-	if (mfrc522_3.PICC_IsNewCardPresent() && mfrc522_3.PICC_ReadCardSerial())
-	{
-		succes();
-		Serial.println("KARTA PODNESENA");
+		succes2();
 	}
 
 }
